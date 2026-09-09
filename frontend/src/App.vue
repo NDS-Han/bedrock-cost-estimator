@@ -168,7 +168,7 @@ onMounted(async () => {
 
   <main>
     <section class="intro">
-      <div><p class="kicker">Planning workspace</p><h2>토큰 사용량으로 연간 예산을 가늠하세요.</h2><p>LiteLLM 단가를 Sync합니다.</p></div>
+      <div><p class="kicker">Planning workspace</p><h2>Calculate Bedrock Price</h2><p>LiteLLM 단가를 Sync합니다.</p></div>
       <button class="secondary" type="button" :disabled="busy" @click="synchronize">관리자 가격 동기화</button>
     </section>
 
