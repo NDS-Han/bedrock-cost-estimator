@@ -39,6 +39,7 @@ beforeEach(() => {
     .mockResolvedValueOnce({ ok: true, json: async () => presets })
     .mockResolvedValueOnce({ ok: true, json: async () => models })
     .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'success', completedAt: '2026-09-09T04:00:00Z', storedCount: 15 }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ rate: '1344.33', effectiveDate: '2026-09-09', source: 'Frankfurter' }) })
 })
 
 describe('App', () => {
@@ -48,6 +49,17 @@ describe('App', () => {
 
     expect(wrapper.get('.sync-tag').text()).toBe('Last Sync: 2026.09.09')
     expect(wrapper.get('.secondary').text()).toContain('Prices Sync')
+    expect((wrapper.get('#exchange').element as HTMLInputElement).value).toBe('1344.33')
+  })
+
+  it('allows the automatically loaded exchange rate to be edited', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+
+    await wrapper.get('#exchange').setValue(1400)
+
+    expect((wrapper.get('#exchange').element as HTMLInputElement).value).toBe('1400')
+    expect(wrapper.get('.rate-source').text()).toContain('직접 입력')
   })
 
   it('shows all cache ratios and switches manual edits to Custom', async () => {

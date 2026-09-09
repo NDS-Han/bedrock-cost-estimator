@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     database_url: str = "sqlite:///./cost_estimator.db"
     litellm_catalog_url: str = "https://api.litellm.ai/model_catalog"
+    frankfurter_rate_url: str = "https://api.frankfurter.dev/v2/rate/USD/KRW"
     preset_path: Path = Path(__file__).resolve().parents[2] / "config" / "presets.yaml"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

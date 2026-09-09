@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { estimate, getModels, getPresets, getSyncStatus, syncPrices } from './api/client'
+import { estimate, getExchangeRate, getModels, getPresets, getSyncStatus, syncPrices } from './api/client'
 import type { EstimateResult, ModelPrice, Presets, Ratios, SyncStatus } from './types/api'
 
 const presets = ref<Presets>()
@@ -19,6 +19,8 @@ interface EstimatorState {
   activeDaysPerMonth: number
   userCount: number
   exchangeRate: number
+  exchangeRateMode: 'auto' | 'manual'
+  exchangeRateDate: string
   ratios: Ratios
   haikuPercentage: number
   sonnetPercentage: number
@@ -33,6 +35,7 @@ const stored = sessionStorage.getItem('bedrock-estimator')
 const defaults: EstimatorState = {
   workload: 'codingAgent', intensity: 'general', dailyTotalTokens: 4500000,
   activeDaysPerMonth: 20, userCount: 30, exchangeRate: 1400,
+  exchangeRateMode: 'auto', exchangeRateDate: '',
   ratios: { input: 10, output: 5, cacheRead: 75, cacheWrite: 10 } as Ratios,
   haikuPercentage: 10, sonnetPercentage: 75, opusPercentage: 15,
   haikuId: '', sonnetId: '', opusId: '',
@@ -50,6 +53,9 @@ const selectedModelIds = computed(() => [state.haikuId, state.sonnetId, state.op
 const hasUniqueModels = computed(() => new Set(selectedModelIds.value).size === selectedModelIds.value.length)
 const valid = computed(() => tokenTotal.value === 100 && modelTotal.value === 100 && hasUniqueModels.value && state.dailyTotalTokens > 0 && state.userCount > 0)
 const reference = computed(() => presets.value?.references.claudeCode)
+const rateSource = computed(() => state.exchangeRateMode === 'manual'
+  ? '직접 입력'
+  : state.exchangeRateDate ? `Frankfurter · ${state.exchangeRateDate}` : '환율 조회 중')
 const groupedBreakdown = computed(() => {
   const groups = new Map<string, NonNullable<typeof result.value>['breakdown']>()
   for (const item of result.value?.breakdown ?? []) {
@@ -100,6 +106,19 @@ function perMillion(value: string) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value) * 1_000_000)
 }
 
+async function loadExchangeRate(force = false) {
+  try {
+    const latest = await getExchangeRate()
+    if (force || state.exchangeRateMode === 'auto') {
+      state.exchangeRate = Number(latest.rate)
+      state.exchangeRateMode = 'auto'
+      state.exchangeRateDate = latest.effectiveDate
+    }
+  } catch {
+    state.exchangeRateMode = 'manual'
+  }
+}
+function markRateManual() { state.exchangeRateMode = 'manual' }
 function markCustom() { state.intensity = 'custom' }
 function money(value: string) {
   const amount = Number(value) * (currency.value === 'KRW' ? Number(state.exchangeRate) : 1)
@@ -156,7 +175,7 @@ async function loadModels() {
 watch(state, () => sessionStorage.setItem('bedrock-estimator', JSON.stringify(state)), { deep: true })
 watch(() => [state.workload, state.intensity], applyPreset)
 onMounted(async () => {
-  try { presets.value = await getPresets(); applyPreset(); await loadModels(); priceSyncStatus.value = await getSyncStatus() }
+  try { presets.value = await getPresets(); applyPreset(); await loadModels(); priceSyncStatus.value = await getSyncStatus(); await loadExchangeRate() }
   catch (reason) { error.value = reason instanceof Error ? reason.message : '초기 데이터를 불러올 수 없습니다.' }
 })
 </script>
@@ -165,8 +184,8 @@ onMounted(async () => {
   <header class="topbar">
     <div><span class="eyebrow">AWS BEDROCK</span><h1>사용량 비용 계산기</h1></div>
     <div class="currency-control">
-      <label for="exchange">USD → KRW 환율</label>
-      <input id="exchange" v-model.number="state.exchangeRate" type="number" min="1" inputmode="decimal">
+      <label for="exchange">USD → KRW 환율<input id="exchange" v-model.number="state.exchangeRate" type="number" min="1" step="0.01" inputmode="decimal" @input="markRateManual"><small class="rate-source">{{ rateSource }}</small></label>
+      <button class="rate-refresh" type="button" aria-label="최신 USD 원화 환율 다시 불러오기" @click="loadExchangeRate(true)">↻</button>
       <button type="button" :disabled="state.exchangeRate <= 0" @click="currency = currency === 'USD' ? 'KRW' : 'USD'">
         {{ currency === 'USD' ? '원화로 변환' : '달러로 보기' }}
       </button>

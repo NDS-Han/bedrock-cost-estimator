@@ -10,6 +10,7 @@ from app.db.models import PriceSyncRun
 from app.db.session import get_db
 from app.schemas.estimate import EstimateRequest, EstimateResult, ModelPrice
 from app.services.estimation import calculate_estimate
+from app.services.exchange_rate import ExchangeRate, fetch_usd_krw_rate
 from app.services.pricing import fetch_catalog, list_prices, store_catalog
 
 router = APIRouter(prefix="/api/v1")
@@ -26,6 +27,11 @@ def health(db: DbSession) -> dict:
 def presets() -> dict:
     config = load_presets(get_settings().preset_path)
     return config.model_dump(mode="json")
+
+
+@router.get("/exchange-rate", response_model=ExchangeRate)
+async def exchange_rate() -> ExchangeRate:
+    return await fetch_usd_krw_rate(get_settings().frankfurter_rate_url)
 
 
 @router.get("/models", response_model=list[ModelPrice])

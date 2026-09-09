@@ -19,6 +19,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-bedrock}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@database:5432/${POSTGRES_DB:-bedrock_costs}
       LITELLM_CATALOG_URL: ${LITELLM_CATALOG_URL:-https://api.litellm.ai/model_catalog}
+      FRANKFURTER_RATE_URL: ${FRANKFURTER_RATE_URL:-https://api.frankfurter.dev/v2/rate/USD/KRW}
     depends_on:
       database:
         condition: service_healthy

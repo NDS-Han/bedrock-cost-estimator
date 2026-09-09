@@ -32,6 +32,12 @@ export interface Presets {
   metadata: { notice: string }
 }
 
+export interface ExchangeRate {
+  rate: string
+  effectiveDate: string
+  source: string
+}
+
 export interface SyncStatus {
   status: 'never' | 'success' | 'failure'
   completedAt?: string
