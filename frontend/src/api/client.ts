@@ -1,4 +1,4 @@
-import type { EstimateResult, ModelPrice, Presets, Ratios } from '../types/api'
+import type { EstimateResult, ModelPrice, Presets, Ratios, SyncStatus } from '../types/api'
 
 const API = '/api/v1'
 
@@ -10,6 +10,7 @@ async function json<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const getPresets = () => json<Presets>('/presets')
 export const getModels = () => json<ModelPrice[]>('/models')
+export const getSyncStatus = () => json<SyncStatus>('/prices/sync-status')
 export const syncPrices = () => json<{ storedCount: number }>('/prices/sync', { method: 'POST' })
 
 export function estimate(payload: {

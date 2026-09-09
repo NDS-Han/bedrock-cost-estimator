@@ -32,6 +32,13 @@ export interface Presets {
   metadata: { notice: string }
 }
 
+export interface SyncStatus {
+  status: 'never' | 'success' | 'failure'
+  completedAt?: string
+  fetchedCount?: number
+  storedCount?: number
+}
+
 export interface EstimateResult {
   breakdown: Array<{
     modelId: string

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { estimate, getModels, getPresets, syncPrices } from './api/client'
-import type { EstimateResult, ModelPrice, Presets, Ratios } from './types/api'
+import { estimate, getModels, getPresets, getSyncStatus, syncPrices } from './api/client'
+import type { EstimateResult, ModelPrice, Presets, Ratios, SyncStatus } from './types/api'
 
 const presets = ref<Presets>()
 const models = ref<ModelPrice[]>([])
 const result = ref<EstimateResult>()
+const priceSyncStatus = ref<SyncStatus>()
 const error = ref('')
 const busy = ref(false)
 const currency = ref<'USD' | 'KRW'>('USD')
@@ -105,6 +106,12 @@ function money(value: string) {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: currency.value, maximumFractionDigits: currency.value === 'KRW' ? 0 : 2 }).format(amount)
 }
 function tokens(value: string) { return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Number(value)) }
+function syncDate(value: string) {
+  const date = new Date(value)
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+    .map((part, index) => index === 0 ? String(part) : String(part).padStart(2, '0'))
+    .join('.')
+}
 function categoryLabel(category: string) {
   return { input: 'Input', output: 'Output', cacheRead: 'Cache read', cacheWrite: 'Cache write' }[category] ?? category
 }
@@ -135,7 +142,7 @@ async function calculate() {
 async function synchronize() {
   busy.value = true
   error.value = ''
-  try { await syncPrices(); await loadModels() }
+  try { await syncPrices(); await loadModels(); priceSyncStatus.value = await getSyncStatus() }
   catch (reason) { error.value = reason instanceof Error ? reason.message : '가격을 동기화할 수 없습니다.' }
   finally { busy.value = false }
 }
@@ -149,7 +156,7 @@ async function loadModels() {
 watch(state, () => sessionStorage.setItem('bedrock-estimator', JSON.stringify(state)), { deep: true })
 watch(() => [state.workload, state.intensity], applyPreset)
 onMounted(async () => {
-  try { presets.value = await getPresets(); applyPreset(); await loadModels() }
+  try { presets.value = await getPresets(); applyPreset(); await loadModels(); priceSyncStatus.value = await getSyncStatus() }
   catch (reason) { error.value = reason instanceof Error ? reason.message : '초기 데이터를 불러올 수 없습니다.' }
 })
 </script>
@@ -168,8 +175,14 @@ onMounted(async () => {
 
   <main>
     <section class="intro">
-      <div><p class="kicker">Planning workspace</p><h2>Calculate Bedrock Price</h2><p>LiteLLM 단가를 Sync합니다.</p></div>
-      <button class="secondary" type="button" :disabled="busy" @click="synchronize">관리자 가격 동기화</button>
+      <div><p class="kicker">Planning workspace</p><h2>Calculate Bedrock Price</h2></div>
+      <div class="sync-control">
+        <button class="secondary sync-button" type="button" :disabled="busy" @click="synchronize">
+          <span class="sync-icon" :class="{ spinning: busy }" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 7v5h-5"/><path d="M4 17v-5h5"/><path d="M6.1 9a7 7 0 0 1 11.6-2L20 12"/><path d="m4 12 2.3 5a7 7 0 0 0 11.6-2"/></svg></span>
+          <span><strong>{{ busy ? 'Syncing…' : 'Prices Sync' }}</strong><small>LiteLLM catalog</small></span>
+        </button>
+        <span v-if="models.length && priceSyncStatus?.status === 'success' && priceSyncStatus.completedAt" class="sync-tag">Last Sync: {{ syncDate(priceSyncStatus.completedAt) }}</span>
+      </div>
     </section>
 
     <p v-if="error" class="alert" role="alert">{{ error }}</p>

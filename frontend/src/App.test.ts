@@ -38,9 +38,18 @@ beforeEach(() => {
   fetchMock
     .mockResolvedValueOnce({ ok: true, json: async () => presets })
     .mockResolvedValueOnce({ ok: true, json: async () => models })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'success', completedAt: '2026-09-09T04:00:00Z', storedCount: 15 }) })
 })
 
 describe('App', () => {
+  it('shows the latest successful price synchronization as a tag', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+
+    expect(wrapper.get('.sync-tag').text()).toBe('Last Sync: 2026.09.09')
+    expect(wrapper.get('.secondary').text()).toContain('Prices Sync')
+  })
+
   it('shows all cache ratios and switches manual edits to Custom', async () => {
     const wrapper = mount(App)
     await flushPromises()
