@@ -1,4 +1,4 @@
-import type { ExchangeRate, EstimateResult, ModelPrice, Presets, Ratios, SyncStatus } from '../types/api'
+import type { CohortEstimateResult, ExchangeRate, EstimateResult, ModelPrice, Presets, Ratios, SyncStatus } from '../types/api'
 
 const API = '/api/v1'
 
@@ -13,6 +13,24 @@ export const getExchangeRate = () => json<ExchangeRate>('/exchange-rate')
 export const getModels = () => json<ModelPrice[]>('/models')
 export const getSyncStatus = () => json<SyncStatus>('/prices/sync-status')
 export const syncPrices = () => json<{ storedCount: number }>('/prices/sync', { method: 'POST' })
+
+export function cohortEstimate(payload: {
+  activeDaysPerMonth: number
+  userCount: number
+  cohorts: Array<{
+    intensity: string
+    percentage: number
+    dailyTotalTokens: number
+    tokenRatios: Ratios
+    models: Array<{ modelId: string; family: string; percentage: number }>
+  }>
+}) {
+  return json<CohortEstimateResult>('/cohort-estimates', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
 
 export function estimate(payload: {
   dailyTotalTokens: number

@@ -91,6 +91,10 @@ Accepts:
 
 Returns the normalized request, per-model/per-category tokens and USD costs, and all aggregate USD totals. It also returns the exact price snapshot used in the calculation so results are auditable without persisting the estimate.
 
+### `POST /api/v1/cohort-estimates`
+
+Accepts total users, common active days, and Lite/General/Heavy cohort percentages totaling 100%. Each cohort uses the version-controlled preset's daily tokens, while one user-editable token composition and one extensible model mix are shared by all cohorts. Returns effective users, per-user daily cost, monthly cost, and annual cost per cohort plus weighted organization totals.
+
 ### `POST /api/v1/prices/sync`
 
 Pages through `https://api.litellm.ai/model_catalog` using `provider=bedrock_converse`, validates the untrusted `data` and `has_more` response fields, filters global chat models that provide complete input, output, cache-read, and cache-write pricing, normalizes LiteLLM pricing fields, and atomically upserts prices. It returns fetched/stored counts and sync timestamp. If fetching, parsing, validation, pagination, or completeness checks fail, existing prices remain unchanged.

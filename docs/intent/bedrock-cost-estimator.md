@@ -15,7 +15,11 @@ Teams need a defensible approximation of per-user, monthly, and annual Bedrock c
 ## Inputs
 
 - Workload: coding agent or internal chatbot
-- Usage intensity: Lite, General, Heavy, or Custom
+- Estimation mode: Single or Cohort
+- Single-mode usage intensity: Lite, General, Heavy, or Custom
+- Cohort-mode user mix: Lite, General, and Heavy percentages totaling 100%
+- Cohort-mode token composition: one shared input/output/cache-read/cache-write ratio applied to every cohort
+- Cohort-mode model mix: the same editable Haiku/Sonnet/Opus and additional global model mix applied to every cohort
 - Average total tokens per active user-day
 - Average active days per month
 - Number of users

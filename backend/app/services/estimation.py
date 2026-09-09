@@ -50,3 +50,43 @@ def calculate_estimate(
         totalMonthlyUsd=total_monthly,
         totalAnnualUsd=total_monthly * 12,
     )
+
+
+def calculate_cohort_estimate(
+    request: estimate.CohortEstimateRequest,
+    prices_by_id: dict[str, estimate.ModelPrice],
+) -> estimate.CohortEstimateResult:
+    cohorts: list[estimate.CohortResult] = []
+    total_monthly = Decimal()
+
+    for cohort in request.cohorts:
+        single_user = calculate_estimate(
+            estimate.EstimateRequest(
+                dailyTotalTokens=cohort.dailyTotalTokens,
+                activeDaysPerMonth=request.activeDaysPerMonth,
+                userCount=1,
+                tokenRatios=cohort.tokenRatios,
+                models=cohort.models,
+            ),
+            prices_by_id,
+        )
+        effective_users = Decimal(request.userCount) * cohort.percentage / Decimal("100")
+        cohort_monthly = single_user.perUserMonthlyUsd * effective_users
+        total_monthly += cohort_monthly
+        cohorts.append(
+            estimate.CohortResult(
+                intensity=cohort.intensity,
+                percentage=cohort.percentage,
+                effectiveUsers=effective_users,
+                perUserDailyUsd=single_user.perUserDailyUsd,
+                breakdown=single_user.breakdown,
+                totalMonthlyUsd=cohort_monthly,
+                totalAnnualUsd=cohort_monthly * 12,
+            )
+        )
+
+    return estimate.CohortEstimateResult(
+        cohorts=cohorts,
+        totalMonthlyUsd=total_monthly,
+        totalAnnualUsd=total_monthly * 12,
+    )

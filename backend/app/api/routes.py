@@ -8,8 +8,14 @@ from app.core.presets import load_presets
 from app.core.settings import get_settings
 from app.db.models import PriceSyncRun
 from app.db.session import get_db
-from app.schemas.estimate import EstimateRequest, EstimateResult, ModelPrice
-from app.services.estimation import calculate_estimate
+from app.schemas.estimate import (
+    CohortEstimateRequest,
+    CohortEstimateResult,
+    EstimateRequest,
+    EstimateResult,
+    ModelPrice,
+)
+from app.services.estimation import calculate_cohort_estimate, calculate_estimate
 from app.services.exchange_rate import ExchangeRate, fetch_usd_krw_rate
 from app.services.pricing import fetch_catalog, list_prices, store_catalog
 
@@ -44,6 +50,18 @@ def estimates(request: EstimateRequest, db: DbSession) -> EstimateResult:
     prices = {price.modelId: price for price in list_prices(db)}
     try:
         return calculate_estimate(request, prices)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.post("/cohort-estimates", response_model=CohortEstimateResult)
+def cohort_estimates(
+    request: CohortEstimateRequest,
+    db: DbSession,
+) -> CohortEstimateResult:
+    prices = {price.modelId: price for price in list_prices(db)}
+    try:
+        return calculate_cohort_estimate(request, prices)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 

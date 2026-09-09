@@ -45,6 +45,20 @@ export interface SyncStatus {
   storedCount?: number
 }
 
+export interface CohortEstimateResult {
+  cohorts: Array<{
+    intensity: 'lite' | 'general' | 'heavy'
+    percentage: string
+    effectiveUsers: string
+    perUserDailyUsd: string
+    breakdown: EstimateResult['breakdown']
+    totalMonthlyUsd: string
+    totalAnnualUsd: string
+  }>
+  totalMonthlyUsd: string
+  totalAnnualUsd: string
+}
+
 export interface EstimateResult {
   breakdown: Array<{
     modelId: string
