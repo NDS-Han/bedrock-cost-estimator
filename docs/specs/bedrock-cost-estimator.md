@@ -2,14 +2,14 @@
 
 ## Objective
 
-Create a responsive internal estimator for Amazon Bedrock token spending. Users select workload presets or enter custom usage, mix one Sonnet-family and one Opus-family model, and receive transparent per-day, monthly, and annual estimates from synchronized LiteLLM prices.
+Create a responsive internal estimator for Amazon Bedrock token spending. Users select workload presets or enter custom usage, mix one Haiku-family, one Sonnet-family, and one Opus-family model, and receive transparent per-day, monthly, and annual estimates from synchronized LiteLLM prices.
 
 ## Assumptions
 
 1. This project implements its own price synchronization API using the verified reference implementation at `/Users/han/Documents/Github/workspace/litellm-price-api/model_list_api.py`.
 2. The upstream is the unauthenticated LiteLLM Model Catalog endpoint `https://api.litellm.ai/model_catalog`. Synchronization requests `provider=bedrock_converse`, follows `page`/`page_size` pagination until `has_more` is false, and applies a 30-second request timeout.
 3. The synchronization adapter maps `id`, `provider`, `mode`, `input_cost_per_token`, `output_cost_per_token`, `cache_read_input_token_cost`, and `cache_creation_input_token_cost` into the application's canonical price schema. Long-context and one-hour cache rates are retained when present for later display and calculation support.
-4. Only Amazon Bedrock Anthropic Sonnet and Opus text models are selectable in the first release.
+4. Global Amazon Bedrock Anthropic Haiku, Sonnet, and Opus models are always available as the default mix. Users may add other global Bedrock chat models when all four required token prices are available.
 5. Estimates use decimal arithmetic on the backend; display rounding never affects calculation.
 6. The estimator is deployed behind an organization-controlled network boundary. With no application authentication, the price-sync endpoint must not be exposed publicly.
 7. Initial preset numbers are explicitly labeled low-confidence planning assumptions and will later be calibrated from Bedrock or LiteLLM usage logs.
@@ -87,13 +87,13 @@ Accepts:
 - activeDaysPerMonth: integer from 1 through 31
 - userCount: positive integer
 - tokenRatios: four non-negative decimal percentages totaling 100
-- models: exactly one Sonnet and one Opus selection, each with a non-negative percentage; percentages total 100
+- models: required global Haiku, Sonnet, and Opus selections plus up to 17 optional global models; model IDs are unique, percentages are non-negative, and percentages total 100
 
 Returns the normalized request, per-model/per-category tokens and USD costs, and all aggregate USD totals. It also returns the exact price snapshot used in the calculation so results are auditable without persisting the estimate.
 
 ### `POST /api/v1/prices/sync`
 
-Pages through `https://api.litellm.ai/model_catalog` using `provider=bedrock_converse`, validates the untrusted `data` and `has_more` response fields, filters Anthropic Sonnet and Opus chat models, normalizes LiteLLM pricing fields, and atomically upserts prices. It returns fetched/stored counts and sync timestamp. If fetching, parsing, validation, pagination, or completeness checks fail, existing prices remain unchanged.
+Pages through `https://api.litellm.ai/model_catalog` using `provider=bedrock_converse`, validates the untrusted `data` and `has_more` response fields, filters global chat models that provide complete input, output, cache-read, and cache-write pricing, normalizes LiteLLM pricing fields, and atomically upserts prices. It returns fetched/stored counts and sync timestamp. If fetching, parsing, validation, pagination, or completeness checks fail, existing prices remain unchanged.
 
 This endpoint assumes network-level administrative protection in the first release. Public exposure is prohibited without adding authentication.
 
@@ -137,7 +137,7 @@ A backend YAML file is validated at startup. It contains:
 - Coding Agent and Internal Chatbot presets
 - Lite, General, and Heavy daily token assumptions
 - token-category percentages
-- default Sonnet/Opus percentages
+- default Haiku/Sonnet/Opus percentages
 - human-readable assumptions
 - source classification and confidence
 - Claude Code cost-reference values and official source URL
@@ -151,7 +151,7 @@ Invalid configuration prevents startup rather than silently producing estimates.
 - Workload and intensity selectors
 - Usage assumptions form
 - Always-visible token composition inputs
-- Sonnet/Opus model and percentage inputs
+- Haiku/Sonnet/Opus model and percentage inputs
 - Validation summary adjacent to affected controls
 - Cost summary with daily, per-user monthly, organization monthly, and annual values
 - Model/category breakdown table
@@ -245,7 +245,6 @@ Vue uses Composition API with `<script setup lang="ts">`, semantic HTML, explici
 - Adding application authentication
 - Persisting estimates
 - Changing the four-category token model
-- Adding providers or model families beyond Bedrock Anthropic Sonnet/Opus
 - Adding automatic currency-rate retrieval
 
 ### Never

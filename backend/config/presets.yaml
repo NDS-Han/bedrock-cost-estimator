@@ -15,19 +15,19 @@ workloads:
         description: 짧은 질의와 간헐적인 코드 수정
         dailyTotalTokens: 1500000
         tokenRatios: {input: 10, output: 5, cacheRead: 75, cacheWrite: 10}
-        modelRatios: {sonnet: 90, opus: 10}
+        modelRatios: {haiku: 20, sonnet: 75, opus: 5}
       general:
         label: General
         description: 여러 세션에서 일상적으로 개발 보조 사용
         dailyTotalTokens: 4500000
         tokenRatios: {input: 10, output: 5, cacheRead: 75, cacheWrite: 10}
-        modelRatios: {sonnet: 80, opus: 20}
+        modelRatios: {haiku: 10, sonnet: 75, opus: 15}
       heavy:
         label: Heavy
         description: 대형 저장소에서 장시간 에이전트 작업
         dailyTotalTokens: 9000000
         tokenRatios: {input: 8, output: 4, cacheRead: 80, cacheWrite: 8}
-        modelRatios: {sonnet: 70, opus: 30}
+        modelRatios: {haiku: 5, sonnet: 70, opus: 25}
   internalChatbot:
     label: 사내 챗봇
     levels:
@@ -36,19 +36,19 @@ workloads:
         description: 짧고 간헐적인 업무 질의
         dailyTotalTokens: 50000
         tokenRatios: {input: 70, output: 25, cacheRead: 4, cacheWrite: 1}
-        modelRatios: {sonnet: 95, opus: 5}
+        modelRatios: {haiku: 60, sonnet: 35, opus: 5}
       general:
         label: General
         description: 문서 기반 질의를 포함한 일상 사용
         dailyTotalTokens: 250000
         tokenRatios: {input: 60, output: 20, cacheRead: 15, cacheWrite: 5}
-        modelRatios: {sonnet: 90, opus: 10}
+        modelRatios: {haiku: 40, sonnet: 50, opus: 10}
       heavy:
         label: Heavy
         description: 긴 문서와 반복 문맥을 적극 활용
         dailyTotalTokens: 1000000
         tokenRatios: {input: 45, output: 15, cacheRead: 32, cacheWrite: 8}
-        modelRatios: {sonnet: 80, opus: 20}
+        modelRatios: {haiku: 20, sonnet: 60, opus: 20}
 metadata:
   source: initial_planning_assumption
   confidence: low

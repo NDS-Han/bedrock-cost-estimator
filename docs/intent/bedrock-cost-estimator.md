@@ -20,7 +20,7 @@ Teams need a defensible approximation of per-user, monthly, and annual Bedrock c
 - Average active days per month
 - Number of users
 - Token composition: input, output, cache read, and cache write percentages
-- Model mix: a baseline Sonnet-family model and an advanced Opus-family model
+- Model mix: a lightweight Haiku-family model, a baseline Sonnet-family model, and an advanced Opus-family model by default, with optional additional global Bedrock models
 - Manually entered USD/KRW exchange rate
 
 Token composition percentages must total 100%. Model mix percentages must total 100%. Editing a preset-derived usage value changes the usage intensity to Custom.
@@ -66,7 +66,7 @@ Results default to USD. Entering an exchange rate and selecting "Convert to KRW"
 
 ## Success
 
-An internal user can select a preset, adjust all usage assumptions, choose a Sonnet/Opus mix, and obtain a transparent monthly and annual estimate whose breakdown can be traced to synchronized per-token prices.
+An internal user can select a preset, adjust all usage assumptions, choose a global Haiku/Sonnet/Opus mix, and obtain a transparent monthly and annual estimate whose breakdown can be traced to synchronized per-token prices.
 
 ## Out of scope
 

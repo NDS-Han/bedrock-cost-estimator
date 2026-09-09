@@ -7,12 +7,13 @@ from app.schemas.estimate import TokenRatios
 
 
 class ModelRatios(BaseModel):
+    haiku: int = Field(ge=0, le=100)
     sonnet: int = Field(ge=0, le=100)
     opus: int = Field(ge=0, le=100)
 
     @model_validator(mode="after")
     def total_is_100(self) -> "ModelRatios":
-        if self.sonnet + self.opus != 100:
+        if self.haiku + self.sonnet + self.opus != 100:
             raise ValueError("Model ratios must total 100")
         return self
 

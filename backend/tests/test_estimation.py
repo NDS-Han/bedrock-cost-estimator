@@ -14,14 +14,34 @@ def request() -> EstimateRequest:
         userCount=10,
         tokenRatios=TokenRatios(input=10, output=5, cacheRead=75, cacheWrite=10),
         models=[
+            ModelAllocation(modelId="haiku", family="HAIKU", percentage=0),
             ModelAllocation(modelId="sonnet", family="SONNET", percentage=80),
             ModelAllocation(modelId="opus", family="OPUS", percentage=20),
+            ModelAllocation(modelId="nova", family="OTHER", percentage=0),
         ],
     )
 
 
 def prices() -> dict[str, ModelPrice]:
     return {
+        "haiku": ModelPrice(
+            modelId="haiku",
+            displayName="Haiku",
+            family="HAIKU",
+            inputCostPerToken="0.000001",
+            outputCostPerToken="0.000005",
+            cacheReadCostPerToken="0.0000001",
+            cacheWriteCostPerToken="0.00000125",
+        ),
+        "nova": ModelPrice(
+            modelId="nova",
+            displayName="Nova",
+            family="OTHER",
+            inputCostPerToken="0.000001",
+            outputCostPerToken="0.000005",
+            cacheReadCostPerToken="0.0000001",
+            cacheWriteCostPerToken="0.00000125",
+        ),
         "sonnet": ModelPrice(
             modelId="sonnet",
             displayName="Sonnet",
@@ -67,6 +87,7 @@ def test_rejects_model_mix_that_does_not_total_100() -> None:
             userCount=1,
             tokenRatios=TokenRatios(input=10, output=5, cacheRead=75, cacheWrite=10),
             models=[
+                ModelAllocation(modelId="haiku", family="HAIKU", percentage=0),
                 ModelAllocation(modelId="sonnet", family="SONNET", percentage=70),
                 ModelAllocation(modelId="opus", family="OPUS", percentage=20),
             ],
@@ -81,6 +102,7 @@ def test_rejects_duplicate_model_families() -> None:
             userCount=1,
             tokenRatios=TokenRatios(input=10, output=5, cacheRead=75, cacheWrite=10),
             models=[
+                ModelAllocation(modelId="haiku", family="HAIKU", percentage=0),
                 ModelAllocation(modelId="sonnet-a", family="SONNET", percentage=50),
                 ModelAllocation(modelId="sonnet-b", family="SONNET", percentage=50),
             ],

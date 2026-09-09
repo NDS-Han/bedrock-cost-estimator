@@ -1,4 +1,4 @@
-export type Family = 'SONNET' | 'OPUS'
+export type Family = 'HAIKU' | 'SONNET' | 'OPUS' | 'OTHER'
 export type Category = 'input' | 'output' | 'cacheRead' | 'cacheWrite'
 
 export interface ModelPrice {
@@ -23,7 +23,7 @@ export interface PresetLevel {
   description: string
   dailyTotalTokens: number
   tokenRatios: Ratios
-  modelRatios: { sonnet: number; opus: number }
+  modelRatios: { haiku: number; sonnet: number; opus: number }
 }
 
 export interface Presets {

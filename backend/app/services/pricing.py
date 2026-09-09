@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -47,11 +47,14 @@ def normalize_catalog(raw_models: list[dict]) -> list[CatalogModel]:
     normalized = []
     for raw in raw_models:
         model_id = str(raw.get("id", "")).lower()
-        if raw.get("mode") != "chat" or "anthropic" not in model_id:
+        if not model_id.startswith("global.") or raw.get("mode") != "chat":
             continue
-        if "sonnet" not in model_id and "opus" not in model_id:
+        try:
+            normalized.append(CatalogModel.model_validate(raw))
+        except ValidationError:
             continue
-        normalized.append(CatalogModel.model_validate(raw))
+    if not any("haiku" in item.id.lower() for item in normalized):
+        raise ValueError("Catalog contains no complete Haiku prices")
     if not any("sonnet" in item.id.lower() for item in normalized):
         raise ValueError("Catalog contains no complete Sonnet prices")
     if not any("opus" in item.id.lower() for item in normalized):
@@ -91,7 +94,14 @@ def store_catalog(db: Session, raw_models: list[dict]) -> int:
         for model in models:
             record = db.get(ModelPriceRecord, model.id) or ModelPriceRecord(model_id=model.id)
             record.display_name = model.id
-            record.family = "SONNET" if "sonnet" in model.id.lower() else "OPUS"
+            record.family = next(
+                (
+                    family.upper()
+                    for family in ("haiku", "sonnet", "opus")
+                    if family in model.id.lower()
+                ),
+                "OTHER",
+            )
             record.provider = model.provider
             record.input_cost_per_token = model.input_cost_per_token
             record.output_cost_per_token = model.output_cost_per_token

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { estimate, getModels, getPresets, syncPrices } from './api/client'
 import type { EstimateResult, ModelPrice, Presets, Ratios } from './types/api'
 
@@ -9,28 +9,94 @@ const result = ref<EstimateResult>()
 const error = ref('')
 const busy = ref(false)
 const currency = ref<'USD' | 'KRW'>('USD')
+const modalModel = ref<ModelPrice>()
+const modalClose = ref<HTMLButtonElement>()
+interface EstimatorState {
+  workload: string
+  intensity: string
+  dailyTotalTokens: number
+  activeDaysPerMonth: number
+  userCount: number
+  exchangeRate: number
+  ratios: Ratios
+  haikuPercentage: number
+  sonnetPercentage: number
+  opusPercentage: number
+  haikuId: string
+  sonnetId: string
+  opusId: string
+  additionalModels: Array<{ modelId: string; percentage: number }>
+}
+
 const stored = sessionStorage.getItem('bedrock-estimator')
-const state = reactive(stored ? JSON.parse(stored) : {
+const defaults: EstimatorState = {
   workload: 'codingAgent', intensity: 'general', dailyTotalTokens: 4500000,
   activeDaysPerMonth: 20, userCount: 30, exchangeRate: 1400,
   ratios: { input: 10, output: 5, cacheRead: 75, cacheWrite: 10 } as Ratios,
-  sonnetPercentage: 80, opusPercentage: 20, sonnetId: '', opusId: '',
-})
+  haikuPercentage: 10, sonnetPercentage: 75, opusPercentage: 15,
+  haikuId: '', sonnetId: '', opusId: '',
+  additionalModels: [] as Array<{ modelId: string; percentage: number }>,
+}
+const restored = stored ? JSON.parse(stored) as Partial<EstimatorState> : {}
+const state = reactive<EstimatorState>({ ...defaults, ...restored })
 
+const haikuModels = computed(() => models.value.filter((model) => model.family === 'HAIKU'))
 const sonnetModels = computed(() => models.value.filter((model) => model.family === 'SONNET'))
 const opusModels = computed(() => models.value.filter((model) => model.family === 'OPUS'))
 const tokenTotal = computed(() => Object.values(state.ratios as Ratios).reduce((a, b) => a + Number(b), 0))
-const modelTotal = computed(() => Number(state.sonnetPercentage) + Number(state.opusPercentage))
-const valid = computed(() => tokenTotal.value === 100 && modelTotal.value === 100 && state.dailyTotalTokens > 0 && state.userCount > 0)
+const modelTotal = computed(() => Number(state.haikuPercentage) + Number(state.sonnetPercentage) + Number(state.opusPercentage) + state.additionalModels.reduce((sum, model) => sum + Number(model.percentage), 0))
+const selectedModelIds = computed(() => [state.haikuId, state.sonnetId, state.opusId, ...state.additionalModels.map((model) => model.modelId)].filter(Boolean))
+const hasUniqueModels = computed(() => new Set(selectedModelIds.value).size === selectedModelIds.value.length)
+const valid = computed(() => tokenTotal.value === 100 && modelTotal.value === 100 && hasUniqueModels.value && state.dailyTotalTokens > 0 && state.userCount > 0)
 const reference = computed(() => presets.value?.references.claudeCode)
+const groupedBreakdown = computed(() => {
+  const groups = new Map<string, NonNullable<typeof result.value>['breakdown']>()
+  for (const item of result.value?.breakdown ?? []) {
+    groups.set(item.modelId, [...(groups.get(item.modelId) ?? []), item])
+  }
+  return [...groups.entries()].map(([modelId, items]) => ({
+    modelId,
+    displayName: selectedModel(modelId)?.displayName ?? modelId,
+    family: items[0].family,
+    items,
+    totalUsd: String(items.reduce((sum, item) => sum + Number(item.costUsd), 0)),
+  }))
+})
 
 function applyPreset() {
   if (state.intensity === 'custom' || !presets.value) return
   const preset = presets.value.workloads[state.workload].levels[state.intensity]
   state.dailyTotalTokens = preset.dailyTotalTokens
   state.ratios = { ...preset.tokenRatios }
+  state.haikuPercentage = preset.modelRatios.haiku
   state.sonnetPercentage = preset.modelRatios.sonnet
   state.opusPercentage = preset.modelRatios.opus
+  state.additionalModels = []
+}
+
+function addModel() {
+  const candidate = models.value.find((model) => !selectedModelIds.value.includes(model.modelId))
+  if (candidate) state.additionalModels.push({ modelId: candidate.modelId, percentage: 0 })
+  markCustom()
+}
+function removeModel(index: number) {
+  state.additionalModels.splice(index, 1)
+  markCustom()
+}
+function selectedModel(modelId: string) {
+  return models.value.find((model) => model.modelId === modelId)
+}
+function modelFamily(modelId: string) {
+  return selectedModel(modelId)?.family ?? 'OTHER'
+}
+async function openPrice(modelId: string) {
+  modalModel.value = selectedModel(modelId)
+  await nextTick()
+  modalClose.value?.focus()
+}
+function closePrice() { modalModel.value = undefined }
+function perMillion(value: string) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value) * 1_000_000)
 }
 
 function markCustom() { state.intensity = 'custom' }
@@ -39,9 +105,12 @@ function money(value: string) {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: currency.value, maximumFractionDigits: currency.value === 'KRW' ? 0 : 2 }).format(amount)
 }
 function tokens(value: string) { return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Number(value)) }
+function categoryLabel(category: string) {
+  return { input: 'Input', output: 'Output', cacheRead: 'Cache read', cacheWrite: 'Cache write' }[category] ?? category
+}
 
 async function calculate() {
-  if (!valid.value || !state.sonnetId || !state.opusId) return
+  if (!valid.value || !state.haikuId || !state.sonnetId || !state.opusId) return
   busy.value = true
   error.value = ''
   try {
@@ -49,8 +118,14 @@ async function calculate() {
       dailyTotalTokens: Number(state.dailyTotalTokens), activeDaysPerMonth: Number(state.activeDaysPerMonth),
       userCount: Number(state.userCount), tokenRatios: state.ratios,
       models: [
+        { modelId: state.haikuId, family: 'HAIKU', percentage: Number(state.haikuPercentage) },
         { modelId: state.sonnetId, family: 'SONNET', percentage: Number(state.sonnetPercentage) },
         { modelId: state.opusId, family: 'OPUS', percentage: Number(state.opusPercentage) },
+        ...state.additionalModels.map((model) => ({
+          modelId: model.modelId,
+          family: modelFamily(model.modelId),
+          percentage: Number(model.percentage),
+        })),
       ],
     })
   } catch (reason) { error.value = reason instanceof Error ? reason.message : '계산할 수 없습니다.' }
@@ -66,6 +141,7 @@ async function synchronize() {
 }
 async function loadModels() {
   models.value = await getModels()
+  state.haikuId ||= haikuModels.value[haikuModels.value.length - 1]?.modelId ?? ''
   state.sonnetId ||= sonnetModels.value[sonnetModels.value.length - 1]?.modelId ?? ''
   state.opusId ||= opusModels.value[opusModels.value.length - 1]?.modelId ?? ''
 }
@@ -128,8 +204,15 @@ onMounted(async () => {
 
         <section>
           <div class="section-heading"><span>04</span><h3>모델 혼합</h3><strong :class="{ invalid: modelTotal !== 100 }">합계 {{ modelTotal }}%</strong></div>
-          <div class="model-row"><label>기준 모델 · Sonnet<select v-model="state.sonnetId"><option v-for="model in sonnetModels" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select></label><label>비중 %<input v-model.number="state.sonnetPercentage" type="number" min="0" max="100" @input="markCustom"></label></div>
-          <div class="model-row"><label>고지능 모델 · Opus<select v-model="state.opusId"><option v-for="model in opusModels" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select></label><label>비중 %<input v-model.number="state.opusPercentage" type="number" min="0" max="100" @input="markCustom"></label></div>
+          <div class="model-row"><label>경량 모델 · Haiku<span class="model-select-control"><select v-model="state.haikuId"><option v-for="model in haikuModels" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select><button type="button" aria-label="Haiku 모델 단가 보기" @click="openPrice(state.haikuId)"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button></span></label><label>비중 %<input v-model.number="state.haikuPercentage" type="number" min="0" max="100" @input="markCustom"></label></div>
+          <div class="model-row"><label>기준 모델 · Sonnet<span class="model-select-control"><select v-model="state.sonnetId"><option v-for="model in sonnetModels" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select><button type="button" aria-label="Sonnet 모델 단가 보기" @click="openPrice(state.sonnetId)"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button></span></label><label>비중 %<input v-model.number="state.sonnetPercentage" type="number" min="0" max="100" @input="markCustom"></label></div>
+          <div class="model-row"><label>고지능 모델 · Opus<span class="model-select-control"><select v-model="state.opusId"><option v-for="model in opusModels" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select><button type="button" aria-label="Opus 모델 단가 보기" @click="openPrice(state.opusId)"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button></span></label><label>비중 %<input v-model.number="state.opusPercentage" type="number" min="0" max="100" @input="markCustom"></label></div>
+          <div v-for="(extra, index) in state.additionalModels" :key="index" class="model-row extra-model">
+            <label>추가 모델<span class="model-select-control"><select v-model="extra.modelId" @change="markCustom"><option v-for="model in models" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select><button type="button" aria-label="추가 모델 단가 보기" @click="openPrice(extra.modelId)"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button></span></label>
+            <label>비중 %<span class="percentage-action"><input v-model.number="extra.percentage" type="number" min="0" max="100" @input="markCustom"><button type="button" aria-label="추가 모델 삭제" @click="removeModel(index)">삭제</button></span></label>
+          </div>
+          <button class="add-model" type="button" :disabled="selectedModelIds.length >= models.length" @click="addModel">+ 모델 추가</button>
+          <p v-if="!hasUniqueModels" class="validation" role="alert">같은 모델을 중복해서 선택할 수 없습니다.</p>
           <p v-if="!models.length" class="hint">가격 데이터가 없습니다. 관리자 가격 동기화를 먼저 실행하세요.</p>
         </section>
         <button class="primary" type="submit" :disabled="!valid || busy || !models.length">{{ busy ? '처리 중…' : '견적 계산하기' }}</button>
@@ -139,9 +222,30 @@ onMounted(async () => {
         <section class="result-hero"><p>연간 예상 비용</p><strong>{{ result ? money(result.totalAnnualUsd) : '—' }}</strong><small>{{ state.userCount }}명 · 월 {{ state.activeDaysPerMonth }}일 기준</small></section>
         <section class="panel metrics"><div><span>1인 / 활성일</span><b>{{ result ? money(result.perUserDailyUsd) : '—' }}</b></div><div><span>1인 / 월</span><b>{{ result ? money(result.perUserMonthlyUsd) : '—' }}</b></div><div><span>전체 / 월</span><b>{{ result ? money(result.totalMonthlyUsd) : '—' }}</b></div></section>
         <section v-if="state.workload === 'codingAgent' && reference" class="reference"><span>ANTHROPIC REFERENCE</span><p>Enterprise 평균 <b>${{ reference.averageDailyUsd }}/활성일</b>, 월 <b>${{ reference.monthlyMinUsd }}–${{ reference.monthlyMaxUsd }}</b></p><small>비교용 지표이며 계산에는 사용하지 않습니다.</small></section>
-        <section v-if="result" class="panel breakdown"><h3>비용 상세</h3><table><thead><tr><th>모델</th><th>구분</th><th>토큰</th><th>일 비용</th></tr></thead><tbody><tr v-for="item in result.breakdown" :key="`${item.modelId}-${item.category}`"><td>{{ item.family }}</td><td>{{ item.category }}</td><td>{{ tokens(item.tokens) }}</td><td>{{ money(item.costUsd) }}</td></tr></tbody></table></section>
+        <section v-if="result" class="panel breakdown">
+          <div class="breakdown-heading"><div><span>COST BREAKDOWN</span><h3>모델별 비용 상세</h3></div><small>1인 · 활성일 기준</small></div>
+          <article v-for="group in groupedBreakdown" :key="group.modelId" class="model-cost-group" data-testid="model-cost-group">
+            <header><div><strong>{{ group.displayName }}</strong><small>{{ group.family }}</small></div><b>{{ money(group.totalUsd) }}</b></header>
+            <table><thead><tr><th>토큰 유형</th><th>사용량</th><th>일 비용</th></tr></thead><tbody><tr v-for="item in group.items" :key="item.category"><td>{{ categoryLabel(item.category) }}</td><td>{{ tokens(item.tokens) }}</td><td>{{ money(item.costUsd) }}</td></tr></tbody></table>
+          </article>
+        </section>
         <p class="notice">{{ presets?.metadata.notice ?? '프리셋은 초기 예산 산정을 위한 가정값입니다.' }}</p>
       </aside>
     </div>
   </main>
+  <Teleport to="body">
+    <div v-if="modalModel" class="modal-backdrop" role="presentation" @click="closePrice">
+      <section class="price-modal" role="dialog" aria-modal="true" aria-labelledby="price-modal-title" @click.stop @keydown.esc="closePrice">
+        <header><div><span>MODEL PRICE</span><h2 id="price-modal-title">1M 토큰 기준 단가</h2></div><button ref="modalClose" type="button" aria-label="단가 모달 닫기" @click="closePrice">×</button></header>
+        <p class="model-id">{{ modalModel.displayName }}</p>
+        <dl>
+          <div><dt>Input</dt><dd>{{ perMillion(modalModel.inputCostPerToken) }}</dd></div>
+          <div><dt>Output</dt><dd>{{ perMillion(modalModel.outputCostPerToken) }}</dd></div>
+          <div><dt>Cache read</dt><dd>{{ perMillion(modalModel.cacheReadCostPerToken) }}</dd></div>
+          <div><dt>Cache write</dt><dd>{{ perMillion(modalModel.cacheWriteCostPerToken) }}</dd></div>
+        </dl>
+        <p class="modal-note">LiteLLM에서 마지막으로 동기화한 USD 토큰 단가입니다.</p>
+      </section>
+    </div>
+  </Teleport>
 </template>
