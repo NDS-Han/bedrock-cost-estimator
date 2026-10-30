@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { cohortEstimate, estimate, getExchangeRate, getModels, getPresets, getSyncStatus, syncPrices } from './api/client'
+import { language, setLanguage, t, tm } from './i18n'
 import type { CohortEstimateResult, EstimateResult, ModelPrice, Presets, Ratios, SyncStatus } from './types/api'
 
 const presets = ref<Presets>()
@@ -19,6 +20,7 @@ interface EstimatorState {
   estimateMode: 'single' | 'cohort'
   intensity: string
   cohortRatios: { lite: number; general: number; heavy: number }
+  cohortTokens: { lite: number; general: number; heavy: number }
   dailyTotalTokens: number
   activeDaysPerMonth: number
   userCount: number
@@ -38,7 +40,8 @@ interface EstimatorState {
 const stored = sessionStorage.getItem('bedrock-estimator')
 const defaults: EstimatorState = {
   workload: 'codingAgent', estimateMode: 'single', intensity: 'general',
-  cohortRatios: { lite: 70, general: 0, heavy: 30 }, dailyTotalTokens: 4500000,
+  cohortRatios: { lite: 70, general: 0, heavy: 30 },
+  cohortTokens: { lite: 1500000, general: 4500000, heavy: 9000000 }, dailyTotalTokens: 4500000,
   activeDaysPerMonth: 20, userCount: 30, exchangeRate: 1400,
   exchangeRateMode: 'auto', exchangeRateDate: '',
   ratios: { input: 10, output: 5, cacheRead: 75, cacheWrite: 10 } as Ratios,
@@ -58,13 +61,15 @@ const modelTotal = computed(() => Number(state.haikuPercentage) + Number(state.s
 const selectedModelIds = computed(() => [state.haikuId, state.sonnetId, state.opusId, ...state.additionalModels.map((model) => model.modelId)].filter(Boolean))
 const hasUniqueModels = computed(() => new Set(selectedModelIds.value).size === selectedModelIds.value.length)
 const cohortTotal = computed(() => Object.values(state.cohortRatios).reduce((sum, value) => sum + Number(value), 0))
+const cohortTokensValid = computed(() => intensities.every((intensity) => state.cohortRatios[intensity] <= 0 || Number(state.cohortTokens[intensity]) > 0))
 const valid = computed(() => state.estimateMode === 'cohort'
-  ? cohortTotal.value === 100 && tokenTotal.value === 100 && modelTotal.value === 100 && hasUniqueModels.value && state.userCount > 0 && state.activeDaysPerMonth > 0 && Boolean(state.haikuId && state.sonnetId && state.opusId)
+  ? cohortTotal.value === 100 && cohortTokensValid.value && tokenTotal.value === 100 && modelTotal.value === 100 && hasUniqueModels.value && state.userCount > 0 && state.activeDaysPerMonth > 0 && Boolean(state.haikuId && state.sonnetId && state.opusId)
   : tokenTotal.value === 100 && modelTotal.value === 100 && hasUniqueModels.value && state.dailyTotalTokens > 0 && state.userCount > 0)
 const estimateSignature = computed(() => JSON.stringify({
   workload: state.workload,
   estimateMode: state.estimateMode,
   cohortRatios: state.cohortRatios,
+  cohortTokens: state.cohortTokens,
   dailyTotalTokens: state.dailyTotalTokens,
   activeDaysPerMonth: state.activeDaysPerMonth,
   userCount: state.userCount,
@@ -78,8 +83,11 @@ const estimateSignature = computed(() => JSON.stringify({
 }))
 const reference = computed(() => presets.value?.references.claudeCode)
 const rateSource = computed(() => state.exchangeRateMode === 'manual'
-  ? '직접 입력'
-  : state.exchangeRateDate ? `Frankfurter · ${state.exchangeRateDate}` : '환율 조회 중')
+  ? t('manualRate')
+  : state.exchangeRateDate ? `Frankfurter · ${state.exchangeRateDate}` : t('fetchingRate'))
+const notice = computed(() => language.value === 'ko'
+  ? (presets.value?.metadata.notice ?? t('defaultNotice'))
+  : t('defaultNotice'))
 const totalMonthlyUsd = computed(() => state.estimateMode === 'cohort' ? cohortResult.value?.totalMonthlyUsd : result.value?.totalMonthlyUsd)
 const totalAnnualUsd = computed(() => state.estimateMode === 'cohort' ? cohortResult.value?.totalAnnualUsd : result.value?.totalAnnualUsd)
 const perUserMonthlyUsd = computed(() => {
@@ -106,8 +114,12 @@ const groupedBreakdown = computed(() => groupBreakdown(result.value?.breakdown ?
 
 function applyPreset() {
   if (state.intensity === 'custom' || !presets.value) return
-  const preset = presets.value.workloads[state.workload].levels[state.intensity]
+  const levels = presets.value.workloads[state.workload].levels
+  const preset = levels[state.intensity]
   state.dailyTotalTokens = preset.dailyTotalTokens
+  for (const intensity of intensities) {
+    state.cohortTokens[intensity] = levels[intensity].dailyTotalTokens
+  }
   state.ratios = { ...preset.tokenRatios }
   state.haikuPercentage = preset.modelRatios.haiku
   state.sonnetPercentage = preset.modelRatios.sonnet
@@ -129,6 +141,9 @@ function selectedModel(modelId: string) {
 }
 function modelFamily(modelId: string) {
   return selectedModel(modelId)?.family ?? 'OTHER'
+}
+function workloadLabel(key: string, fallback: string) {
+  return tm(`workload.${key}`) ?? fallback
 }
 async function openPrice(modelId: string) {
   modalModel.value = selectedModel(modelId)
@@ -158,7 +173,7 @@ function money(value: string) {
   const amount = Number(value) * (currency.value === 'KRW' ? Number(state.exchangeRate) : 1)
   return new Intl.NumberFormat(currency.value === 'USD' ? 'en-US' : 'ko-KR', { style: 'currency', currency: currency.value, currencyDisplay: 'narrowSymbol', maximumFractionDigits: currency.value === 'KRW' ? 0 : 2 }).format(amount)
 }
-function tokens(value: string) { return new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }).format(Number(value)) }
+function tokens(value: string) { return new Intl.NumberFormat(language.value === 'ko' ? 'ko-KR' : 'en-US', { maximumFractionDigits: 0 }).format(Number(value)) }
 function syncDate(value: string) {
   const date = new Date(value)
   return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
@@ -187,7 +202,6 @@ async function calculate() {
   error.value = ''
   try {
     if (state.estimateMode === 'cohort' && presets.value) {
-      const levels = presets.value.workloads[state.workload].levels
       cohortResult.value = await cohortEstimate({
         activeDaysPerMonth: Number(state.activeDaysPerMonth),
         userCount: Number(state.userCount),
@@ -196,7 +210,7 @@ async function calculate() {
           .map((intensity) => ({
             intensity,
             percentage: state.cohortRatios[intensity],
-            dailyTotalTokens: levels[intensity].dailyTotalTokens,
+            dailyTotalTokens: Number(state.cohortTokens[intensity]),
             tokenRatios: state.ratios,
             models: modelAllocations(),
           })),
@@ -209,7 +223,7 @@ async function calculate() {
       })
     }
     isEstimateStale.value = false
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : '계산할 수 없습니다.' }
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : t('errorCalculate') }
   finally { busy.value = false }
 }
 
@@ -217,7 +231,7 @@ async function synchronize() {
   busy.value = true
   error.value = ''
   try { await syncPrices(); await loadModels(); priceSyncStatus.value = await getSyncStatus() }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : '가격을 동기화할 수 없습니다.' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t('errorSync') }
   finally { busy.value = false }
 }
 async function loadModels() {
@@ -230,20 +244,28 @@ async function loadModels() {
 watch(state, () => sessionStorage.setItem('bedrock-estimator', JSON.stringify(state)), { deep: true })
 watch(estimateSignature, () => { if (result.value || cohortResult.value) isEstimateStale.value = true })
 watch(() => [state.workload, state.intensity], applyPreset)
+watch(language, (lang) => {
+  document.documentElement.lang = lang
+  document.title = t('documentTitle')
+}, { immediate: true })
 onMounted(async () => {
   try { presets.value = await getPresets(); applyPreset(); await loadModels(); priceSyncStatus.value = await getSyncStatus(); await loadExchangeRate() }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : '초기 데이터를 불러올 수 없습니다.' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t('errorLoad') }
 })
 </script>
 
 <template>
   <header class="topbar">
-    <div><span class="eyebrow">AWS BEDROCK</span><h1>사용량 비용 계산기</h1></div>
+    <div><span class="eyebrow">AWS BEDROCK</span><h1>{{ t('appTitle') }}</h1></div>
     <div class="currency-control">
-      <label for="exchange">USD → KRW 환율<input id="exchange" v-model.number="state.exchangeRate" type="number" min="1" step="0.01" inputmode="decimal" @input="markRateManual"><small class="rate-source">{{ rateSource }}</small></label>
-      <button class="rate-refresh" type="button" aria-label="최신 USD 원화 환율 다시 불러오기" @click="loadExchangeRate(true)">↻</button>
+      <div class="lang-toggle" role="group" :aria-label="t('languageGroup')">
+        <button type="button" :class="{ active: language === 'ko' }" :aria-pressed="language === 'ko'" @click="setLanguage('ko')">KO</button>
+        <button type="button" :class="{ active: language === 'en' }" :aria-pressed="language === 'en'" @click="setLanguage('en')">EN</button>
+      </div>
+      <label for="exchange">{{ t('exchangeRateLabel') }}<input id="exchange" v-model.number="state.exchangeRate" type="number" min="1" step="0.01" inputmode="decimal" @input="markRateManual"><small class="rate-source">{{ rateSource }}</small></label>
+      <button class="rate-refresh" type="button" :aria-label="t('refreshRate')" @click="loadExchangeRate(true)">↻</button>
       <button type="button" :disabled="state.exchangeRate <= 0" @click="currency = currency === 'USD' ? 'KRW' : 'USD'">
-        {{ currency === 'USD' ? '원화로 변환' : '달러로 보기' }}
+        {{ currency === 'USD' ? t('toKrw') : t('toUsd') }}
       </button>
     </div>
   </header>
@@ -264,36 +286,37 @@ onMounted(async () => {
     <div class="layout">
       <form class="panel form-panel" @submit.prevent="calculate">
         <section>
-          <div class="section-heading"><span>01</span><h3>사용 시나리오</h3></div>
-          <label>업무 유형<select v-model="state.workload"><option v-for="(item, key) in presets?.workloads" :key="key" :value="key">{{ item.label }}</option></select></label>
-          <div class="mode-tabs" role="tablist" aria-label="견적 계산 모드">
-            <button type="button" role="tab" :aria-selected="state.estimateMode === 'single'" :class="{ active: state.estimateMode === 'single' }" @click="state.estimateMode = 'single'">단일 모드</button>
-            <button type="button" role="tab" :aria-selected="state.estimateMode === 'cohort'" :class="{ active: state.estimateMode === 'cohort' }" @click="state.estimateMode = 'cohort'">복합 모드</button>
+          <div class="section-heading"><span>01</span><h3>{{ t('scenario') }}</h3></div>
+          <label>{{ t('workloadType') }}<select v-model="state.workload"><option v-for="(item, key) in presets?.workloads" :key="key" :value="key">{{ workloadLabel(String(key), item.label) }}</option></select></label>
+          <div class="mode-tabs" role="tablist" :aria-label="t('estimateMode')">
+            <button type="button" role="tab" :aria-selected="state.estimateMode === 'single'" :class="{ active: state.estimateMode === 'single' }" @click="state.estimateMode = 'single'">{{ t('singleMode') }}</button>
+            <button type="button" role="tab" :aria-selected="state.estimateMode === 'cohort'" :class="{ active: state.estimateMode === 'cohort' }" @click="state.estimateMode = 'cohort'">{{ t('cohortMode') }}</button>
           </div>
-          <label v-if="state.estimateMode === 'single'">사용 강도<select v-model="state.intensity"><option v-for="(item, key) in presets?.workloads[state.workload]?.levels" :key="key" :value="key">{{ item.label }}</option><option value="custom">직접 입력</option></select></label>
+          <label v-if="state.estimateMode === 'single'">{{ t('intensity') }}<select v-model="state.intensity"><option v-for="(item, key) in presets?.workloads[state.workload]?.levels" :key="key" :value="key">{{ item.label }}</option><option value="custom">{{ t('custom') }}</option></select></label>
         </section>
 
         <section>
-          <div class="section-heading"><span>02</span><h3>사용량</h3></div>
+          <div class="section-heading"><span>02</span><h3>{{ t('usageSection') }}</h3></div>
           <div :class="state.estimateMode === 'single' ? 'three-col' : 'two-col'">
-            <label v-if="state.estimateMode === 'single'">1인당 일일 토큰<input v-model.number="state.dailyTotalTokens" type="number" min="1" @input="markCustom"></label>
-            <label>월 사용 일수<input v-model.number="state.activeDaysPerMonth" type="number" min="1" max="31"></label>
-            <label>전체 인원<input v-model.number="state.userCount" type="number" min="1"></label>
+            <label v-if="state.estimateMode === 'single'">{{ t('dailyTokensPerUser') }}<input v-model.number="state.dailyTotalTokens" type="number" min="1" @input="markCustom"></label>
+            <label>{{ t('activeDaysPerMonth') }}<input v-model.number="state.activeDaysPerMonth" type="number" min="1" max="31"></label>
+            <label>{{ t('totalUsers') }}<input v-model.number="state.userCount" type="number" min="1"></label>
           </div>
         </section>
 
         <section v-if="state.estimateMode === 'cohort'" role="tabpanel">
-          <div class="section-heading"><span>03</span><h3>사용 강도별 구성</h3><strong :class="{ invalid: cohortTotal !== 100 }">합계 {{ cohortTotal }}%</strong></div>
+          <div class="section-heading"><span>03</span><h3>{{ t('intensityMix') }}</h3><strong :class="{ invalid: cohortTotal !== 100 }">{{ t('totalPct', { n: cohortTotal }) }}</strong></div>
           <div class="cohort-editor">
             <div v-for="intensity in intensities" :key="intensity" class="cohort-row">
-              <div><strong>{{ presets?.workloads[state.workload]?.levels[intensity].label }}</strong><small>약 {{ (state.userCount * state.cohortRatios[intensity] / 100).toFixed(1) }}명 상당</small></div>
-              <label><span class="sr-only">{{ intensity }} 사용자 비율</span><span class="percentage-input"><input v-model.number="state.cohortRatios[intensity]" type="number" min="0" max="100"><b>%</b></span></label>
+              <div><strong>{{ presets?.workloads[state.workload]?.levels[intensity].label }}</strong><small>{{ t('approxUsers', { n: (state.userCount * state.cohortRatios[intensity] / 100).toFixed(1) }) }}</small></div>
+              <label class="cohort-tokens">{{ t('dailyTokens') }}<input v-model.number="state.cohortTokens[intensity]" type="number" min="1" @input="markCustom"></label>
+              <label><span class="sr-only">{{ t('intensityShare', { intensity }) }}</span><span class="percentage-input"><input v-model.number="state.cohortRatios[intensity]" type="number" min="0" max="100"><b>%</b></span></label>
             </div>
           </div>
         </section>
 
         <section>
-          <div class="section-heading"><span>{{ state.estimateMode === 'single' ? '03' : '04' }}</span><h3>토큰 구성</h3><strong :class="{ invalid: tokenTotal !== 100 }">합계 {{ tokenTotal }}%</strong></div>
+          <div class="section-heading"><span>{{ state.estimateMode === 'single' ? '03' : '04' }}</span><h3>{{ t('tokenMix') }}</h3><strong :class="{ invalid: tokenTotal !== 100 }">{{ t('totalPct', { n: tokenTotal }) }}</strong></div>
           <div class="four-col">
             <label>Input %<input v-model.number="state.ratios.input" type="number" min="0" max="100" @input="markCustom"></label>
             <label>Output %<input v-model.number="state.ratios.output" type="number" min="0" max="100" @input="markCustom"></label>
@@ -303,57 +326,57 @@ onMounted(async () => {
         </section>
 
         <section>
-          <div class="section-heading"><span>{{ state.estimateMode === 'single' ? '04' : '05' }}</span><h3>모델 혼합</h3><strong :class="{ invalid: modelTotal !== 100 }">합계 {{ modelTotal }}%</strong></div>
-          <p v-if="state.estimateMode === 'cohort'" class="hint">동일한 모델 구성과 추가 모델 비율을 모든 코호트에 적용합니다.</p>
-          <div class="model-row"><label>경량 모델 · Haiku<span class="model-select-control"><select v-model="state.haikuId"><option v-for="model in haikuModels" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select><button type="button" aria-label="Haiku 모델 단가 보기" @click="openPrice(state.haikuId)"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button></span></label><label>비중 %<input v-model.number="state.haikuPercentage" type="number" min="0" max="100" @input="markCustom"></label></div>
-          <div class="model-row"><label>기준 모델 · Sonnet<span class="model-select-control"><select v-model="state.sonnetId"><option v-for="model in sonnetModels" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select><button type="button" aria-label="Sonnet 모델 단가 보기" @click="openPrice(state.sonnetId)"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button></span></label><label>비중 %<input v-model.number="state.sonnetPercentage" type="number" min="0" max="100" @input="markCustom"></label></div>
-          <div class="model-row"><label>고지능 모델 · Opus<span class="model-select-control"><select v-model="state.opusId"><option v-for="model in opusModels" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select><button type="button" aria-label="Opus 모델 단가 보기" @click="openPrice(state.opusId)"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button></span></label><label>비중 %<input v-model.number="state.opusPercentage" type="number" min="0" max="100" @input="markCustom"></label></div>
+          <div class="section-heading"><span>{{ state.estimateMode === 'single' ? '04' : '05' }}</span><h3>{{ t('modelMix') }}</h3><strong :class="{ invalid: modelTotal !== 100 }">{{ t('totalPct', { n: modelTotal }) }}</strong></div>
+          <p v-if="state.estimateMode === 'cohort'" class="hint">{{ t('cohortMixHint') }}</p>
+          <div class="model-row"><label>{{ t('lightModel') }}<span class="model-select-control"><select v-model="state.haikuId"><option v-for="model in haikuModels" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select><button type="button" :aria-label="t('viewHaikuPrice')" @click="openPrice(state.haikuId)"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button></span></label><label>{{ t('sharePct') }}<input v-model.number="state.haikuPercentage" type="number" min="0" max="100" @input="markCustom"></label></div>
+          <div class="model-row"><label>{{ t('standardModel') }}<span class="model-select-control"><select v-model="state.sonnetId"><option v-for="model in sonnetModels" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select><button type="button" :aria-label="t('viewSonnetPrice')" @click="openPrice(state.sonnetId)"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button></span></label><label>{{ t('sharePct') }}<input v-model.number="state.sonnetPercentage" type="number" min="0" max="100" @input="markCustom"></label></div>
+          <div class="model-row"><label>{{ t('advancedModel') }}<span class="model-select-control"><select v-model="state.opusId"><option v-for="model in opusModels" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select><button type="button" :aria-label="t('viewOpusPrice')" @click="openPrice(state.opusId)"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button></span></label><label>{{ t('sharePct') }}<input v-model.number="state.opusPercentage" type="number" min="0" max="100" @input="markCustom"></label></div>
           <div v-for="(extra, index) in state.additionalModels" :key="index" class="model-row extra-model">
-            <label>추가 모델<span class="model-select-control"><select v-model="extra.modelId" @change="markCustom"><option v-for="model in models" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select><button type="button" aria-label="추가 모델 단가 보기" @click="openPrice(extra.modelId)"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button></span></label>
-            <label>비중 %<span class="percentage-action"><input v-model.number="extra.percentage" type="number" min="0" max="100" @input="markCustom"><button type="button" aria-label="추가 모델 삭제" @click="removeModel(index)">삭제</button></span></label>
+            <label>{{ t('additionalModel') }}<span class="model-select-control"><select v-model="extra.modelId" @change="markCustom"><option v-for="model in models" :key="model.modelId" :value="model.modelId">{{ model.displayName }}</option></select><button type="button" :aria-label="t('viewAdditionalPrice')" @click="openPrice(extra.modelId)"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button></span></label>
+            <label>{{ t('sharePct') }}<span class="percentage-action"><input v-model.number="extra.percentage" type="number" min="0" max="100" @input="markCustom"><button type="button" :aria-label="t('removeModelAria')" @click="removeModel(index)">{{ t('remove') }}</button></span></label>
           </div>
-          <button class="add-model" type="button" :disabled="selectedModelIds.length >= models.length" @click="addModel">+ 모델 추가</button>
-          <p v-if="!hasUniqueModels" class="validation" role="alert">같은 모델을 중복해서 선택할 수 없습니다.</p>
-          <p v-if="!models.length" class="hint">가격 데이터가 없습니다. 관리자 가격 동기화를 먼저 실행하세요.</p>
+          <button class="add-model" type="button" :disabled="selectedModelIds.length >= models.length" @click="addModel">{{ t('addModel') }}</button>
+          <p v-if="!hasUniqueModels" class="validation" role="alert">{{ t('duplicateModel') }}</p>
+          <p v-if="!models.length" class="hint">{{ t('noPrices') }}</p>
         </section>
-        <button class="primary" type="submit" :disabled="!valid || busy || !models.length">{{ busy ? '처리 중…' : isEstimateStale ? '변경사항 다시 계산' : '견적 계산하기' }}</button>
+        <button class="primary" type="submit" :disabled="!valid || busy || !models.length">{{ busy ? t('processing') : isEstimateStale ? t('recalculate') : t('calculate') }}</button>
       </form>
 
       <aside class="results" aria-live="polite">
-        <section class="result-hero" :class="{ stale: isEstimateStale }"><div class="result-label"><p>연간 예상 비용</p><span v-if="isEstimateStale" class="stale-flag">다시 계산 필요</span></div><strong>{{ totalAnnualUsd ? money(totalAnnualUsd) : '—' }}</strong><small>{{ state.userCount }}명 · 월 {{ state.activeDaysPerMonth }}일 기준</small></section>
-        <section class="panel metrics"><div><span>평균 1인 / 활성일</span><b>{{ perUserDailyUsd ? money(perUserDailyUsd) : '—' }}</b></div><div><span>평균 1인 / 월</span><b>{{ perUserMonthlyUsd ? money(perUserMonthlyUsd) : '—' }}</b></div><div><span>전체 / 월</span><b>{{ totalMonthlyUsd ? money(totalMonthlyUsd) : '—' }}</b></div></section>
-        <section v-if="state.workload === 'codingAgent' && reference" class="reference"><span>ANTHROPIC REFERENCE</span><p>Enterprise 평균 <b>${{ reference.averageDailyUsd }}/활성일</b>, 월 <b>${{ reference.monthlyMinUsd }}–${{ reference.monthlyMaxUsd }}</b></p><small>비교용 지표이며 계산에는 사용하지 않습니다.</small></section>
+        <section class="result-hero" :class="{ stale: isEstimateStale }"><div class="result-label"><p>{{ t('annualCost') }}</p><span v-if="isEstimateStale" class="stale-flag">{{ t('staleFlag') }}</span></div><strong>{{ totalAnnualUsd ? money(totalAnnualUsd) : '—' }}</strong><small>{{ t('usersDaysBasis', { users: state.userCount, days: state.activeDaysPerMonth }) }}</small></section>
+        <section class="panel metrics"><div><span>{{ t('perUserActiveDay') }}</span><b>{{ perUserDailyUsd ? money(perUserDailyUsd) : '—' }}</b></div><div><span>{{ t('perUserMonth') }}</span><b>{{ perUserMonthlyUsd ? money(perUserMonthlyUsd) : '—' }}</b></div><div><span>{{ t('totalMonth') }}</span><b>{{ totalMonthlyUsd ? money(totalMonthlyUsd) : '—' }}</b></div></section>
+        <section v-if="state.workload === 'codingAgent' && reference" class="reference"><span>ANTHROPIC REFERENCE</span><p v-html="t('referenceLine', { daily: reference.averageDailyUsd, min: reference.monthlyMinUsd, max: reference.monthlyMaxUsd })"></p><small>{{ t('referenceNote') }}</small></section>
         <section v-if="state.estimateMode === 'cohort' && cohortResult" class="panel breakdown cohort-results">
-          <div class="breakdown-heading"><div><span>COHORT BREAKDOWN</span><h3>사용 강도별 비용</h3></div><small>전체 인원 기준</small></div>
+          <div class="breakdown-heading"><div><span>COHORT BREAKDOWN</span><h3>{{ t('cohortCostTitle') }}</h3></div><small>{{ t('allUsersBasis') }}</small></div>
           <article v-for="cohort in cohortResult.cohorts" :key="cohort.intensity" class="cohort-cost-card">
-            <header><div><strong>{{ presets?.workloads[state.workload]?.levels[cohort.intensity].label }}</strong><small>사용자 {{ cohort.percentage }}% · 약 {{ Number(cohort.effectiveUsers).toFixed(1) }}명 상당</small></div><b>{{ money(cohort.totalAnnualUsd) }}<small>/ 년</small></b></header>
-            <div class="cohort-cost-meta"><div><span>1인 기준 · 활성일</span><strong>{{ money(cohort.perUserDailyUsd) }}</strong></div><div><span>코호트 전체 · 월</span><strong>{{ money(cohort.totalMonthlyUsd) }}</strong></div></div>
+            <header><div><strong>{{ presets?.workloads[state.workload]?.levels[cohort.intensity].label }}</strong><small>{{ t('cohortShare', { p: cohort.percentage, u: Number(cohort.effectiveUsers).toFixed(1) }) }}</small></div><b>{{ money(cohort.totalAnnualUsd) }}<small>{{ t('perYear') }}</small></b></header>
+            <div class="cohort-cost-meta"><div><span>{{ t('perUserActiveDayBasis') }}</span><strong>{{ money(cohort.perUserDailyUsd) }}</strong></div><div><span>{{ t('cohortMonthTotal') }}</span><strong>{{ money(cohort.totalMonthlyUsd) }}</strong></div></div>
             <details class="cohort-details">
-              <summary>모델별 상세 보기</summary>
+              <summary>{{ t('perModelDetails') }}</summary>
               <div class="cohort-model-breakdown">
                 <article v-for="group in groupBreakdown(cohort.breakdown)" :key="group.modelId" class="model-cost-group">
                   <header><div><strong>{{ group.displayName }}</strong><small>{{ group.family }}</small></div><b>{{ money(group.totalUsd) }}</b></header>
-                  <table><thead><tr><th>토큰 유형</th><th>사용량</th><th>1인 일 비용</th></tr></thead><tbody><tr v-for="item in group.items" :key="item.category"><td>{{ categoryLabel(item.category) }}</td><td>{{ tokens(item.tokens) }}</td><td>{{ money(item.costUsd) }}</td></tr></tbody></table>
+                  <table><thead><tr><th>{{ t('tokenType') }}</th><th>{{ t('usageAmount') }}</th><th>{{ t('dailyCostPerUser') }}</th></tr></thead><tbody><tr v-for="item in group.items" :key="item.category"><td>{{ categoryLabel(item.category) }}</td><td>{{ tokens(item.tokens) }}</td><td>{{ money(item.costUsd) }}</td></tr></tbody></table>
                 </article>
               </div>
             </details>
           </article>
         </section>
         <section v-if="state.estimateMode === 'single' && result" class="panel breakdown">
-          <div class="breakdown-heading"><div><span>COST BREAKDOWN</span><h3>모델별 비용 상세</h3></div><small>1인 · 활성일 기준</small></div>
+          <div class="breakdown-heading"><div><span>COST BREAKDOWN</span><h3>{{ t('modelCostTitle') }}</h3></div><small>{{ t('singleBasis') }}</small></div>
           <article v-for="group in groupedBreakdown" :key="group.modelId" class="model-cost-group" data-testid="model-cost-group">
             <header><div><strong>{{ group.displayName }}</strong><small>{{ group.family }}</small></div><b>{{ money(group.totalUsd) }}</b></header>
-            <table><thead><tr><th>토큰 유형</th><th>사용량</th><th>일 비용</th></tr></thead><tbody><tr v-for="item in group.items" :key="item.category"><td>{{ categoryLabel(item.category) }}</td><td>{{ tokens(item.tokens) }}</td><td>{{ money(item.costUsd) }}</td></tr></tbody></table>
+            <table><thead><tr><th>{{ t('tokenType') }}</th><th>{{ t('usageAmount') }}</th><th>{{ t('dailyCost') }}</th></tr></thead><tbody><tr v-for="item in group.items" :key="item.category"><td>{{ categoryLabel(item.category) }}</td><td>{{ tokens(item.tokens) }}</td><td>{{ money(item.costUsd) }}</td></tr></tbody></table>
           </article>
         </section>
-        <p class="notice">{{ presets?.metadata.notice ?? '프리셋은 초기 예산 산정을 위한 가정값입니다.' }}</p>
+        <p class="notice">{{ notice }}</p>
       </aside>
     </div>
   </main>
   <Teleport to="body">
     <div v-if="modalModel" class="modal-backdrop" role="presentation" @click="closePrice">
       <section class="price-modal" role="dialog" aria-modal="true" aria-labelledby="price-modal-title" @click.stop @keydown.esc="closePrice">
-        <header><div><span>MODEL PRICE</span><h2 id="price-modal-title">1M 토큰 기준 단가</h2></div><button ref="modalClose" type="button" aria-label="단가 모달 닫기" @click="closePrice">×</button></header>
+        <header><div><span>MODEL PRICE</span><h2 id="price-modal-title">{{ t('pricePerMillion') }}</h2></div><button ref="modalClose" type="button" :aria-label="t('closePriceModal')" @click="closePrice">×</button></header>
         <p class="model-id">{{ modalModel.displayName }}</p>
         <dl>
           <div><dt>Input</dt><dd>{{ perMillion(modalModel.inputCostPerToken) }}</dd></div>
@@ -361,7 +384,7 @@ onMounted(async () => {
           <div><dt>Cache read</dt><dd>{{ perMillion(modalModel.cacheReadCostPerToken) }}</dd></div>
           <div><dt>Cache write</dt><dd>{{ perMillion(modalModel.cacheWriteCostPerToken) }}</dd></div>
         </dl>
-        <p class="modal-note">LiteLLM에서 마지막으로 동기화한 USD 토큰 단가입니다.</p>
+        <p class="modal-note">{{ t('modalNote') }}</p>
       </section>
     </div>
   </Teleport>

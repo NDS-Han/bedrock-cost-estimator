@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.vue'
+import { setLanguage } from './i18n'
 
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
@@ -47,7 +48,9 @@ const cohortBreakdown = [
 ]
 
 beforeEach(() => {
+  setLanguage('ko')
   sessionStorage.clear()
+  localStorage.clear()
   fetchMock.mockReset()
   fetchMock
     .mockResolvedValueOnce({ ok: true, json: async () => presets })
@@ -172,6 +175,51 @@ describe('App', () => {
 
     expect(wrapper.findAll('.extra-model')).toHaveLength(1)
     expect(wrapper.text()).toContain('추가 모델')
+  })
+
+  it('shows editable per-cohort token presets and sends them to the API', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ totalMonthlyUsd: '0', totalAnnualUsd: '0', cohorts: [] }),
+    })
+    const wrapper = mount(App)
+    await flushPromises()
+
+    await wrapper.get('[role="tab"][aria-selected="false"]').trigger('click')
+
+    const tokenInputs = wrapper.findAll('.cohort-tokens input')
+    expect(tokenInputs).toHaveLength(3)
+    expect((tokenInputs[0].element as HTMLInputElement).value).toBe('1000000')
+    expect((tokenInputs[2].element as HTMLInputElement).value).toBe('9000000')
+
+    await tokenInputs[0].setValue(2000000)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    const request = fetchMock.mock.calls[fetchMock.mock.calls.length - 1]
+    expect(request?.[0]).toBe('/api/v1/cohort-estimates')
+    const payload = JSON.parse(String((request?.[1] as RequestInit).body))
+    const lite = payload.cohorts.find((cohort: { intensity: string }) => cohort.intensity === 'lite')
+    expect(lite.dailyTotalTokens).toBe(2000000)
+  })
+
+  it('switches the UI language between Korean and English', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('사용 시나리오')
+    expect(wrapper.get('.primary').text()).toBe('견적 계산하기')
+
+    await wrapper.get('.lang-toggle button:last-child').trigger('click')
+
+    expect(wrapper.text()).toContain('Usage scenario')
+    expect(wrapper.get('.primary').text()).toBe('Calculate estimate')
+    expect(wrapper.get('.rate-source').text()).not.toContain('직접 입력')
+    expect(localStorage.getItem('bedrock-language')).toBe('en')
+
+    await wrapper.get('.lang-toggle button:first-child').trigger('click')
+
+    expect(wrapper.text()).toContain('사용 시나리오')
   })
 
   it('persists estimator values in session storage', async () => {
