@@ -61,7 +61,7 @@
 ## Task 5: Synchronize LiteLLM prices atomically
 
 **Acceptance criteria**
-- [ ] A typed adapter validates the Model Catalog `data`/`has_more` contract and paginates with `provider=bedrock_converse`.
+- [ ] A typed adapter validates the LiteLLM price-file model map and filters `litellm_provider=bedrock_converse`.
 - [ ] Successful sync extracts the supplied pricing fields, upserts the complete supported Sonnet/Opus set, and records metadata.
 - [ ] Failed or incomplete sync preserves prior active prices.
 

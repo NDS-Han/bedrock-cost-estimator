@@ -42,7 +42,7 @@ Token composition percentages must total 100%. Model mix percentages must total 
 
 ## Pricing
 
-- This project provides a price synchronization API; an administrator manually triggers it to page through LiteLLM Model Catalog (`https://api.litellm.ai/model_catalog`) with the `bedrock_converse` provider filter and normalize the result.
+- This project provides a price synchronization API; an administrator manually triggers it to fetch LiteLLM's open-source price file (`https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json`) with the `bedrock_converse` provider filter and normalize the result.
 - PostgreSQL stores synchronized model prices and synchronization metadata.
 - Pricing must distinguish input, output, cache-read, and cache-write token rates.
 - The estimator uses the selected model versions' stored prices.

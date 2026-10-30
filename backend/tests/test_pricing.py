@@ -2,7 +2,37 @@ from decimal import Decimal
 
 import pytest
 
-from app.services.pricing import normalize_catalog
+from app.services.pricing import catalog_models, normalize_catalog
+
+
+def catalog_entry(model_id: str, **overrides) -> dict:
+    data = model(model_id)
+    data["litellm_provider"] = data.pop("provider")
+    data.pop("id")
+    data.update(overrides)
+    return data
+
+
+def test_catalog_models_filters_and_keys_entries() -> None:
+    payload = {
+        "global.anthropic.claude-sonnet-4": catalog_entry("unused"),
+        "us.anthropic.claude-sonnet-4": catalog_entry("unused"),
+        "gpt-4o": catalog_entry("unused", litellm_provider="openai"),
+        "sample_spec": {"description": "not a model"},
+    }
+
+    result = catalog_models(payload)
+
+    assert [item["id"] for item in result] == [
+        "global.anthropic.claude-sonnet-4",
+        "us.anthropic.claude-sonnet-4",
+    ]
+    assert all(item["provider"] == "bedrock_converse" for item in result)
+
+
+def test_catalog_models_rejects_non_mapping_payload() -> None:
+    with pytest.raises(ValueError, match="model map"):
+        catalog_models([{"id": "global.anthropic.claude-sonnet-4"}])
 
 
 def model(model_id: str, **overrides) -> dict:

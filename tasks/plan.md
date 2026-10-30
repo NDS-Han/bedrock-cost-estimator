@@ -10,7 +10,7 @@ Build the estimator in contract-first vertical slices. Establish deterministic c
 - PostgreSQL stores only model prices and sync history. Browser `sessionStorage` owns transient estimate state.
 - A validated YAML file owns initial presets and published comparison metadata.
 - Prices and calculations use decimal arithmetic; JSON serializes decimal monetary values as strings to prevent floating-point drift.
-- The project implements a LiteLLM pricing-source adapter based on the supplied reference: call `https://api.litellm.ai/model_catalog`, filter `provider=bedrock_converse`, follow `page`/`page_size` pagination, and normalize the result behind an internal interface.
+- The project implements a LiteLLM pricing-source adapter: fetch `https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json`, filter `litellm_provider=bedrock_converse`, and normalize the result behind an internal interface.
 - Price synchronization validates a complete candidate set before committing an atomic upsert.
 - The first release relies on network-level protection for the administrative sync endpoint; it must not be publicly exposed.
 
@@ -88,7 +88,7 @@ Vue estimator flow + sync flow
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| LiteLLM changes its Model Catalog schema or pagination | High | Validate `data` and `has_more` behind a typed adapter, cover the supplied contract with fixtures, cap pagination defensively, and preserve existing DB prices on incompatibility. |
+| LiteLLM changes its price-file schema or moves the source again | High | Validate the model map behind a typed adapter, cover the supplied contract with fixtures, and preserve existing DB prices on incompatibility. |
 | Initial token presets imply false precision | High | Label as low-confidence planning assumptions and show descriptions/source metadata. |
 | Provider fields count cached input differently | High | Normalize once in the source adapter and test fixtures against the four canonical categories. |
 | Missing cache rates underestimates spend | High | Reject unsupported/incomplete model pricing instead of silently substituting. |

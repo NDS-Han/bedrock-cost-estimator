@@ -22,25 +22,22 @@ class CatalogModel(BaseModel):
     cache_creation_input_token_cost: Decimal = Field(ge=0)
 
 
-class CatalogPage(BaseModel):
-    data: list[dict]
-    has_more: bool
+async def fetch_catalog(url: str) -> list[dict]:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+    return catalog_models(response.json())
 
 
-async def fetch_catalog(url: str, page_size: int = 100) -> list[dict]:
-    models: list[dict] = []
-    async with httpx.AsyncClient(timeout=30) as client:
-        for page in range(1, 101):
-            response = await client.get(
-                url,
-                params={"provider": "bedrock_converse", "page": page, "page_size": page_size},
-            )
-            response.raise_for_status()
-            payload = CatalogPage.model_validate(response.json())
-            models.extend(payload.data)
-            if not payload.has_more:
-                return models
-    raise ValueError("LiteLLM catalog exceeded pagination limit")
+def catalog_models(payload: object) -> list[dict]:
+    if not isinstance(payload, dict):
+        raise ValueError("LiteLLM catalog response is not a model map")
+    models = []
+    for model_id, info in payload.items():
+        if not isinstance(info, dict) or info.get("litellm_provider") != "bedrock_converse":
+            continue
+        models.append({**info, "id": model_id, "provider": info["litellm_provider"]})
+    return models
 
 
 def normalize_catalog(raw_models: list[dict]) -> list[CatalogModel]:

@@ -7,7 +7,7 @@ Create a responsive internal estimator for Amazon Bedrock token spending. Users 
 ## Assumptions
 
 1. This project implements its own price synchronization API using the verified reference implementation at `/Users/han/Documents/Github/workspace/litellm-price-api/model_list_api.py`.
-2. The upstream is the unauthenticated LiteLLM Model Catalog endpoint `https://api.litellm.ai/model_catalog`. Synchronization requests `provider=bedrock_converse`, follows `page`/`page_size` pagination until `has_more` is false, and applies a 30-second request timeout.
+2. The upstream is LiteLLM's unauthenticated open-source price file `https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json`. Synchronization fetches the single JSON model map, keeps entries whose `litellm_provider` is `bedrock_converse`, and applies a 30-second request timeout.
 3. The synchronization adapter maps `id`, `provider`, `mode`, `input_cost_per_token`, `output_cost_per_token`, `cache_read_input_token_cost`, and `cache_creation_input_token_cost` into the application's canonical price schema. Long-context and one-hour cache rates are retained when present for later display and calculation support.
 4. Global Amazon Bedrock Anthropic Haiku, Sonnet, and Opus models are always available as the default mix. Users may add other global Bedrock chat models when all four required token prices are available.
 5. Estimates use decimal arithmetic on the backend; display rounding never affects calculation.
@@ -97,7 +97,7 @@ Accepts total users, common active days, and Lite/General/Heavy cohort percentag
 
 ### `POST /api/v1/prices/sync`
 
-Pages through `https://api.litellm.ai/model_catalog` using `provider=bedrock_converse`, validates the untrusted `data` and `has_more` response fields, filters global chat models that provide complete input, output, cache-read, and cache-write pricing, normalizes LiteLLM pricing fields, and atomically upserts prices. It returns fetched/stored counts and sync timestamp. If fetching, parsing, validation, pagination, or completeness checks fail, existing prices remain unchanged.
+Fetches `https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json`, validates the untrusted model map, keeps entries whose `litellm_provider` is `bedrock_converse`, filters global chat models that provide complete input, output, cache-read, and cache-write pricing, normalizes LiteLLM pricing fields, and atomically upserts prices. It returns fetched/stored counts and sync timestamp. If fetching, parsing, validation, or completeness checks fail, existing prices remain unchanged.
 
 This endpoint assumes network-level administrative protection in the first release. Public exposure is prohibited without adding authentication.
 
